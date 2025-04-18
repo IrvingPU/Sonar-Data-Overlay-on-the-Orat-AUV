@@ -6,14 +6,14 @@ Autonomous Underwater Vehicles (AUVs) play a crucial role in oceanographic resea
 
 This repository contains the code and documentation for the Master's Thesis project focused on **overlaying Side-Scan Sonar (SSS) intensities on top of MultiBeam EchoSounder (MBES) bathymetry** using data collected by the **Orat AUV** from the AURORA dataset. The final goal is to prepare data for training machine learning models for **semantic segmentation of benthic habitats**.
 
-## 📌 Project Goals
+##  Project Goals
 
 - Understand and parse sensor data from the AURORA dataset (SSS, MBES, CTD, Navigation, Camera).
 - Implement a method to drape SSS intensities onto the 3D bathymetry surface from MBES data.
 - Enable extraction of relevant features at overlapping coordinates (SSS, MBES roughness, MBES backscatter).
 - Document data transformation workflows and validate coordinate reference systems (CRS).
 
-## 📦 Dataset
+##  Dataset
 
 - **Name:** AURORA Dataset  
 - **Source:** [IEEE Dataport – AURORA Dataset](https://ieee-dataport.org/open-access/aurora-multi-sensor-dataset-robotic-ocean-exploration)  

@@ -1,61 +1,96 @@
 import sys
 import os
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.spatial import KDTree
 
-# Append path to access pyall.py in utils
+# --- Setup path to import pyall ---
 current_dir = os.path.dirname(__file__)
-utils_path = os.path.abspath(os.path.join(current_dir, '..', 'utils'))
-sys.path.append(utils_path)
+pyall_path = os.path.abspath(os.path.join(current_dir, '..', 'utils', 'pyall'))
+sys.path.append(pyall_path)
 
-from pyall import allreader  # Lowercase class name from your pyall.py
+from pyall import allreader
 
-# Path to the .all file
-all_file_path = r"D:\IrvingPU\UIB\TFM\Sonar-Data-Overlay-on-the-Orat-AUV\data\raw\aurora_dataset_sample\JC125\M86\multibeam_echosounder\raw\M0860005.all"
+# --- Path to the .all file ---
+all_file_path = os.path.abspath(os.path.join(
+    current_dir, '..', '..', 'data', 'raw', 'aurora_dataset_sample', 'JC125',
+    'M86', 'multibeam_echosounder', 'raw', 'M0860005.all'))
 
-# Create and initialize reader
 reader = allreader(all_file_path)
 
-# Check file
 if not reader.fileptr:
-    print("Could not open file.")
+    print("Could not open the .all file.")
     sys.exit()
 
-# Start reading (note: this does not extract beam depths yet)
-print("Reading .all file...")
+print("Reading datagrams...")
 
-# This class as-is may not support beam extraction yet.
-# Placeholder "records" for future parsed data
-records = reader.read() if hasattr(reader, 'read') else []
-
-print(f"File opened: {reader.fileName}")
-print(f"Size: {reader.fileSize / 1024:.1f} KB")
-print(f"Total records read: {len(records)}")
-
-# Placeholder for when real depth parsing is implemented
 x_points, y_points, z_points = [], [], []
 
-# TODO: When .read() and datagram parsing is ready, loop through results like:
-for i, record in enumerate(records):
-    if isinstance(record, dict) and 'depths' in record:
-        x_points.extend(record['x'])
-        y_points.extend(record['y'])
-        z_points.extend(record['depths'])
+while reader.moredata():
+    try:
+        typeofdatagram, datagram = reader.readdatagram()
+        if typeofdatagram in ['X', 'D']:
+            datagram.read()
+            depths = getattr(datagram, 'depth', None)
+            across = getattr(datagram, 'acrosstrackdistance', None)
+            along = getattr(datagram, 'alongtrackdistance', None)
 
-# For now, simulate some fake data for plotting
-if not z_points:  # If real data not available, plot mock data
-    z_points = np.random.normal(100, 10, 1000)
-    x_points = np.linspace(-50, 50, 1000)
-    y_points = np.linspace(-100, 100, 1000)
+            if depths is not None and across is not None and along is not None:
+                x_points.extend(across)
+                y_points.extend(along)
+                z_points.extend(depths)
+    except Exception as e:
+        print(f"Skipping datagram: {e}")
+        continue
 
-# Plot bathymetry scatter
+print(f"Extracted points: {len(z_points)}")
+
+x = np.array(x_points)
+y = np.array(y_points)
+z = np.array(z_points)
+
+valid = (z > 0) & (z < 10000)
+x, y, z = x[valid], y[valid], z[valid]
+print(f"Filtered points: {len(z)}")
+
+# --- Plot ---
 plt.figure(figsize=(10, 6))
-sc = plt.scatter(x_points, y_points, c=z_points, cmap='viridis', s=2)
+sc = plt.scatter(x, y, c=z, cmap='viridis', s=1)
 plt.colorbar(sc, label='Depth (m)')
-plt.title("MBES Point Cloud (Simulated)")
+plt.title("MBES Bathymetric Point Cloud")
 plt.xlabel("Across-Track (m)")
 plt.ylabel("Along-Track (m)")
-plt.grid(True)
 plt.tight_layout()
+plt.grid(True)
 plt.show()
+
+# --- Save outputs ---
+output_csv = os.path.abspath(os.path.join(current_dir, '..', '..', 'notebooks', 'mbes_points.csv'))
+output_npz = os.path.abspath(os.path.join(current_dir, '..', '..', 'notebooks', 'mbes_points.npz'))
+
+df = pd.DataFrame({'x': x, 'y': y, 'seafloor_depth': z})
+df.to_csv(output_csv, index=False)
+np.savez(output_npz, x=x, y=y, z=z)
+print(f"Saved point cloud CSV: {output_csv}")
+print(f"Saved point cloud NPZ: {output_npz}")
+
+# --- Load aligned dataset for integration ---
+aligned_path = os.path.abspath(os.path.join(current_dir, '..', '..', 'data', 'processed', 'aligned_sss_mbes_dataset.csv'))
+aligned_df = pd.read_csv(aligned_path)
+
+lon_col = [col for col in aligned_df.columns if col.lower() in ['lon', 'longitude']][0]
+lat_col = [col for col in aligned_df.columns if col.lower() in ['lat', 'latitude']][0]
+query_points = aligned_df[[lon_col, lat_col]].values
+
+mbes_tree = KDTree(np.column_stack((x, y)))
+distances, indices = mbes_tree.query(query_points)
+
+aligned_df['seafloor_depth'] = z[indices]
+print(f"Aligned dataset columns: {list(aligned_df.columns)}")
+
+# --- Export enriched data ---
+final_output = os.path.abspath(os.path.join(current_dir, '..', '..', 'data', 'processed', 'aligned_sss_mbes_with_depth.csv'))
+aligned_df.to_csv(final_output, index=False)
+print(f"Saved enriched dataset: {final_output}")
 
